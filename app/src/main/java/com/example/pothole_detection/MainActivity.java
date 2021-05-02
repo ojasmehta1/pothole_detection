@@ -73,7 +73,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private SensorManager sensorManager;
     Sensor accelerometer;
     long starttime = 0;
-    int print_tf = 1;
     int interval = 5; //interval = 5 seconds
     TextView pothole_type, pothole_accuracy;
     private Interpreter tflite;
@@ -423,12 +422,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 gyroVar = variance(data_arr);
             }
 
-            if (sensorEvent.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
-                mag_x = sensorEvent.values[0];
-                mag_y = sensorEvent.values[1];
-                mag_z = sensorEvent.values[2];
-            }
-
             float[] input = {(float) accMax, (float) accMin, (float) accStd, (float) accZcr, (float) accMean, (float) accVar, (float) gyroMax, (float) gyroMin, (float) gyroStd, (float) gyroZcr, (float) gyroMean, (float) gyroVar};
             float[][] mResult = new float[1][1];
             try {
@@ -440,14 +433,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             int state = argmax(mResult[0]);
             String mytext = "";
-            if (print_tf == 1) {
                 if (state == 0) {
                     mytext = "no pothole";
                 } else {
                     mytext = "pothole";
                 }
                 pothole_type.setText(mytext);
-            }
         //}
     }
 
