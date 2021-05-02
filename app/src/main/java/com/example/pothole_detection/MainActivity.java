@@ -418,7 +418,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         int seconds = (int) (millis / 1000);
         int minutes = seconds / 60;
         seconds = seconds % 60;
-        //if (seconds % interval == 2) {
+        if (seconds % interval == 2) {
             if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                 acc_X = sensorEvent.values[0];
                 acc_Y = sensorEvent.values[1];
@@ -457,19 +457,22 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             }
             int state = argmax(mResult[0]);
-            int classification_res = (int)mResult[0][state];
-            //Toast.makeText(getApplicationContext(),"RESULT: " + classification_res,Toast.LENGTH_SHORT).show();
+            if(mResult[0] != null && state < mResult[0].length && state != -1) {
+                int classification_res = (int) mResult[0][state];
+                //Toast.makeText(getApplicationContext(),"RESULT: " + classification_res,Toast.LENGTH_SHORT).show();
 
-            String mytext = "";
-            
+                String mytext = "";
+
                 if (classification_res == 0) {
                     mytext = "no pothole";
                 } else {
                     mytext = "pothole";
+                    pothole_type.setText(mytext);
                     writeToCSV(1);
                 }
                 pothole_type.setText(mytext);
-        //}
+            }
+        }
     }
 
     @Override
