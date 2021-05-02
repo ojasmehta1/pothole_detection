@@ -91,6 +91,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final String MAPVIEW_BUNDLE_KEY = "MapViewBundleKey";
     List<WeightedLatLng> weightedLatLng = new ArrayList<>();
     HeatmapTileProvider provider;
+    TileOverlay tileOverlay;
     private GoogleApiClient googleApiClient;
     private LocationRequest locationRequest;
     private Location lastLocation;
@@ -147,7 +148,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,3000,10,this);
 
-        pothole_accuracy = findViewById(R.id.pothole_accuracy);
+        //pothole_accuracy = findViewById(R.id.pothole_accuracy);
         pothole_type = findViewById(R.id.pothole_type);
         verifyStoragePermissions(this);
 
@@ -201,7 +202,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .opacity(1.0)
                 .build();
         // Add a tile overlay to the map, using the heat map tile provider.
-        TileOverlay overlay = map.addTileOverlay(new TileOverlayOptions().tileProvider(provider));
+        tileOverlay = map.addTileOverlay(new TileOverlayOptions().tileProvider(provider));
     }
 
     @Override
@@ -222,10 +223,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
         mMap.setMyLocationEnabled(true);
 
-        PlotHeatMap("data_0.csv");
-        PlotHeatMap("data_1.csv");
-        PlotHeatMap("data_2.csv");
-        PlotHeatMap("data_3.csv");
+//        PlotHeatMap("data_0.csv");
+//        PlotHeatMap("data_1.csv");
+//        PlotHeatMap("data_2.csv");
+//        PlotHeatMap("data_3.csv");
         PlotHeatMap("new_data.csv");
         //googleMap.addMarker((new MarkerOptions().position((new LatLng(0,0))).title("Test")));
 
@@ -267,7 +268,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onStop() {
         super.onStop();
-       // mapView.onStop();
+       mapView.onStop();
     }
 
     @Override
@@ -418,7 +419,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         int seconds = (int) (millis / 1000);
         int minutes = seconds / 60;
         seconds = seconds % 60;
-        //if (seconds % interval == 2) {
+        if (seconds % interval == 2) {
             if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                 acc_X = sensorEvent.values[0];
                 acc_Y = sensorEvent.values[1];
@@ -469,7 +470,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     writeToCSV(1);
                 }
                 pothole_type.setText(mytext);
-        //}
+        }
     }
 
     @Override
@@ -582,8 +583,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 + ++pothole_counter + "," +
                 + pothole_type + "\n";;
 
-                weightedLatLng.add(new WeightedLatLng(new LatLng(latitude,longitude),1.0));
-
+                weightedLatLng.add(new WeightedLatLng(new LatLng(latitude,longitude),pothole_type));
+                //tileOverlay.remove();
                 provider.setWeightedData(weightedLatLng);
         try {
             fos.write(littleTest.getBytes());
