@@ -69,7 +69,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         SensorEventListener
 {
     ////////////////////////////
-    private static final String MODEL_NAME = "modelV1.tflite";
+    private static final String MODEL_NAME = "updated_binaryclassifier.tflite";
     private SensorManager sensorManager;
     Sensor accelerometer;
     long starttime = 0;
@@ -400,11 +400,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 acc_Z = sensorEvent.values[2];
 
                 double[] data_arr = {sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
-                accMax = maximum(data_arr);
-                accMin = minimum(data_arr);
+                accMax = maximum(data_arr) / 10;
+                accMin = minimum(data_arr) / 10;
                 accStd = standardDeviation(data_arr);
                 accZcr = zeroCrossingRate(data_arr);
-                accMean = mean(data_arr);
+                accMean = mean(data_arr) / 10;
                 accVar = variance(data_arr);
             }
 
@@ -432,8 +432,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             }
             int state = argmax(mResult[0]);
+            int classification_res = (int)mResult[0][state];
+            //Toast.makeText(getApplicationContext(),"RESULT: " + classification_res,Toast.LENGTH_SHORT).show();
+
             String mytext = "";
-                if (state == 0) {
+            
+                if (classification_res == 0) {
                     mytext = "no pothole";
                 } else {
                     mytext = "pothole";
