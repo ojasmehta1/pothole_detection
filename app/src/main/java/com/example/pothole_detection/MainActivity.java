@@ -73,12 +73,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private SensorManager sensorManager;
     Sensor accelerometer;
     long starttime = 0;
-    int print_tf = 0;
+    int print_tf = 1;
     int interval = 5; //interval = 5 seconds
     TextView pothole_type, pothole_accuracy;
     private Interpreter tflite;
     double acc_X, acc_Y, acc_Z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, milli_;
     double accMax,accMin,accStd,accZcr,accMean,accVar,gyroMax,gyroMin,gyroStd,gyroZcr,gyroMean,gyroVar;
+    private final Interpreter.Options options = new Interpreter.Options();
     ////////////////////////////
     private MapView mapView;
     private GoogleMap mMap;
@@ -113,6 +114,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             } catch (FileNotFoundException e) {
             e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        try {
+            tflite = new Interpreter(loadModelFile(this), options);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -388,7 +394,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         int seconds = (int) (millis / 1000);
         int minutes = seconds / 60;
         seconds = seconds % 60;
-        if (seconds % interval == 2) {
+        //if (seconds % interval == 2) {
             if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                 acc_X = sensorEvent.values[0];
                 acc_Y = sensorEvent.values[1];
@@ -442,7 +448,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
                 pothole_type.setText(mytext);
             }
-        }
+        //}
     }
 
     @Override
