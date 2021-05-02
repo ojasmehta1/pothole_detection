@@ -10,13 +10,20 @@ import androidx.fragment.app.FragmentActivity;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.res.AssetFileDescriptor;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -42,18 +49,37 @@ import com.opencsv.CSVReader;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.tensorflow.lite.Interpreter;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.io.IOException;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback,
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
-        LocationListener
+        LocationListener,
+        SensorEventListener
 {
-
+    ////////////////////////////
+    private static final String MODEL_NAME = "modelV1.tflite";
+    private SensorManager sensorManager;
+    Sensor accelerometer;
+    long starttime = 0;
+    int print_tf = 0;
+    int interval = 5; //interval = 5 seconds
+    TextView pothole_type, pothole_accuracy;
+    private Interpreter tflite;
+    double acc_X, acc_Y, acc_Z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, milli_;
+    double accMax,accMin,accStd,accZcr,accMean,accVar,gyroMax,gyroMin,gyroStd,gyroZcr,gyroMean,gyroVar;
+    ////////////////////////////
     private MapView mapView;
     private GoogleMap mMap;
     private static final String MAPVIEW_BUNDLE_KEY = "MapViewBundleKey";
@@ -79,20 +105,50 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             mapViewBundle = savedInstanceState.getBundle(MAPVIEW_BUNDLE_KEY);
         }
 
+        try {
+            File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/pothole_data", "new_data.csv");
+            FileOutputStream fos = new FileOutputStream(file);
+            if(file.exists()) {
+                fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
+                }
+            } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        RequestSensorData(this);
+
+
+        pothole_accuracy = findViewById(R.id.pothole_accuracy);
+        pothole_type = findViewById(R.id.pothole_type);
         verifyStoragePermissions(this);
 
         mapView = (MapView) findViewById(R.id.map_view);
         mapView.onCreate(mapViewBundle);
         mapView.getMapAsync(this);
 
-
-        //Testing
-//        weightedLatLng.add(new WeightedLatLng(new LatLng(-37.1886, 145.708),1.0));
-//        weightedLatLng.add(new WeightedLatLng(new LatLng(-37.8361, 144.845),2.0));
-//        weightedLatLng.add(new WeightedLatLng(new LatLng(-38.4034, 144.192),3.0));
-//        weightedLatLng.add(new WeightedLatLng(new LatLng(-38.7597, 143.67),4.0));0
     }
 
+    void RequestSensorData(Activity activity)
+    {
+        Sensor gyroscope;
+        Sensor magnetometer;
+        sensorManager = (SensorManager)  getSystemService(Context.SENSOR_SERVICE);
+
+        //Request accelerometer values
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        sensorManager.registerListener((SensorEventListener) activity, accelerometer, sensorManager.SENSOR_DELAY_NORMAL);
+
+        // Request gyroscope values
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        sensorManager.registerListener((SensorEventListener) activity, gyroscope, sensorManager.SENSOR_DELAY_NORMAL);
+
+        // Request magnetometer values
+        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        sensorManager.registerListener((SensorEventListener) activity, magnetometer, sensorManager.SENSOR_DELAY_NORMAL);
+
+    }
     private void addHeatMap(GoogleMap map) {
         int[] colors = {
 //                Color.rgb(128, 225, 0), // green
@@ -198,6 +254,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapView.onLowMemory();
     }
 
+    void LogNewPotholes(double lat, double lng, double intensity)
+    {
+
+    }
     void PlotHeatMap(String filename)
     {
         int pothole_counter = 1;
@@ -258,12 +318,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
 
-        MarkerOptions markerOptions = new MarkerOptions();
-        markerOptions.position(latLng);
-        markerOptions.title("User Current Location");
-        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
+//        MarkerOptions markerOptions = new MarkerOptions();
+//        markerOptions.position(latLng);
+//        markerOptions.title("User Current Location");
+//        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
 
-        currentUserLocationMarker = mMap.addMarker(markerOptions);
+//        currentUserLocationMarker = mMap.addMarker(markerOptions);
 
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
         mMap.animateCamera(CameraUpdateFactory.zoomBy(14));
@@ -320,5 +380,156 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
 
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent sensorEvent) {
+        long millis = System.currentTimeMillis() - starttime;
+        int seconds = (int) (millis / 1000);
+        int minutes = seconds / 60;
+        seconds = seconds % 60;
+        if (seconds % interval == 2) {
+            if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+                acc_X = sensorEvent.values[0];
+                acc_Y = sensorEvent.values[1];
+                acc_Z = sensorEvent.values[2];
+
+                double[] data_arr = {sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
+                accMax = maximum(data_arr);
+                accMin = minimum(data_arr);
+                accStd = standardDeviation(data_arr);
+                accZcr = zeroCrossingRate(data_arr);
+                accMean = mean(data_arr);
+                accVar = variance(data_arr);
+            }
+
+            if (sensorEvent.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
+                gyro_x = sensorEvent.values[0];
+                gyro_y = sensorEvent.values[1];
+                gyro_z = sensorEvent.values[2];
+
+                double[] data_arr = {sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
+                gyroMax = maximum(data_arr);
+                gyroMin = minimum(data_arr);
+                gyroStd = standardDeviation(data_arr);
+                gyroZcr = zeroCrossingRate(data_arr);
+                gyroMean = mean(data_arr);
+                gyroVar = variance(data_arr);
+            }
+
+            if (sensorEvent.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+                mag_x = sensorEvent.values[0];
+                mag_y = sensorEvent.values[1];
+                mag_z = sensorEvent.values[2];
+            }
+
+            float[] input = {(float) accMax, (float) accMin, (float) accStd, (float) accZcr, (float) accMean, (float) accVar, (float) gyroMax, (float) gyroMin, (float) gyroStd, (float) gyroZcr, (float) gyroMean, (float) gyroVar};
+            float[][] mResult = new float[1][1];
+            try {
+                tflite.run(input, mResult);
+            }
+            catch (Exception e)
+            {
+
+            }
+            int state = argmax(mResult[0]);
+            String mytext = "";
+            if (print_tf == 1) {
+                if (state == 0) {
+                    mytext = "no pothole";
+                } else {
+                    mytext = "pothole";
+                }
+                pothole_type.setText(mytext);
+            }
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+    }
+
+
+    private MappedByteBuffer loadModelFile(Activity activity) throws IOException {
+        AssetFileDescriptor fileDescriptor = activity.getAssets().openFd(MODEL_NAME);
+        FileInputStream inputStream = new FileInputStream(fileDescriptor.getFileDescriptor());
+        FileChannel fileChannel = inputStream.getChannel();
+        long startOffset = fileDescriptor.getStartOffset();
+        long declaredLength = fileDescriptor.getDeclaredLength();
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
+    }
+
+    private static int argmax(float[] probs) {
+        int maxIdx = -1;
+        float maxProb = 0.0f;
+        for (int i = 0; i < probs.length; i++) {
+            if (probs[i] > maxProb) {
+                maxProb = probs[i];
+                maxIdx = i;
+            }
+        }
+        return maxIdx;
+    }
+    public static double mean(double data[]){
+        if(data == null || data.length == 0) return
+                0.0;
+        int length = data.length;
+        double Sum = 0;
+        for (int i = 0; i < length; i++)
+            Sum = Sum + data[i];
+        return Sum / length;
+    }
+
+    public static double minimum(double data[]){
+        if(data == null || data.length == 0) return 0.0;
+        int length = data.length;
+        double MIN = data[0];
+        for (int i = 1; i < length; i++){
+            MIN = data[i]<MIN?data[i]:MIN;
+        }
+        return MIN;
+    }
+    public static double maximum(double data[]){
+        if(data == null || data.length == 0) return 0.0;
+
+        int length = data.length;
+        double Max = data[0];
+        for (int i = 1; i<length; i++)
+            Max = data[i]<Max ? Max : data[i];
+        return Max;
+    }
+    public static double variance(double data[]){
+        if(data == null || data.length == 0) return 0.0;
+        int length = data.length;
+        double average = 0, s = 0, sum = 0;
+        for (int i = 0; i<length; i++)
+        {
+            sum = sum + data[i];
+        }
+        average = sum / length;
+        for (int i = 0; i<length; i++)
+        {
+            s = s + Math.pow(data[i] - average, 2);
+        }
+        s = s / length;
+        return s;
+    }
+    public static double standardDeviation(double data[]){
+        if(data == null || data.length == 0) return 0.0;
+        double s = variance(data);
+        s = Math.sqrt(s);
+        return s;
+    }
+    /**æ±‚æ•°ç»„è¿‡é›¶çŽ‡**/
+    public static double zeroCrossingRate(double data[]){
+        int length = data.length;
+        double num = 0;
+        for (int i = 0; i < length - 1; i++)
+        {
+            if (data[i] * data[i + 1]< 0){
+                num++;
+            }
+        }
+        return num / length;
     }
 }
