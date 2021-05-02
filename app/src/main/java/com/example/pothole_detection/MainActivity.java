@@ -18,6 +18,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -67,8 +68,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
         LocationListener,
-        SensorEventListener
-{
+        SensorEventListener {
     ////////////////////////////
     private static final String MODEL_NAME = "updated_binaryclassifier.tflite";
     private SensorManager sensorManager;
@@ -77,10 +77,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     int interval = 5; //interval = 5 seconds
     int pothole_counter = 0;
     TextView pothole_type, pothole_accuracy;
-    double latitude,longitude;
+    double latitude, longitude;
     private Interpreter tflite;
+    LocationManager locationManager;
+    ArrayList<WeightedLatLng> new_potholes = new ArrayList<>();
     double acc_X, acc_Y, acc_Z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, milli_;
-    double accMax,accMin,accStd,accZcr,accMean,accVar,gyroMax,gyroMin,gyroStd,gyroZcr,gyroMean,gyroVar;
+    double accMax, accMin, accStd, accZcr, accMean, accVar, gyroMax, gyroMin, gyroStd, gyroZcr, gyroMean, gyroVar;
     private final Interpreter.Options options = new Interpreter.Options();
     FileOutputStream fos = null;
     ////////////////////////////
@@ -88,6 +90,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private GoogleMap mMap;
     private static final String MAPVIEW_BUNDLE_KEY = "MapViewBundleKey";
     List<WeightedLatLng> weightedLatLng = new ArrayList<>();
+    HeatmapTileProvider provider;
     private GoogleApiClient googleApiClient;
     private LocationRequest locationRequest;
     private Location lastLocation;
@@ -111,14 +114,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         try {
             File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/pothole_data", "new_data.csv");
-            if(file.exists()) {
+            if (file.exists()) {
+                fos = new FileOutputStream(file, true);
                 //fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
-                }
-            else{
+            } else {
                 fos = new FileOutputStream(file);
                 fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
             }
-            } catch (FileNotFoundException e) {
+        } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
             e.printStackTrace();
@@ -131,6 +134,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         RequestSensorData(this);
 
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,3000,10,this);
 
         pothole_accuracy = findViewById(R.id.pothole_accuracy);
         pothole_type = findViewById(R.id.pothole_type);
@@ -178,7 +193,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         Gradient gradient = new Gradient(colors, startPoints);
         // Create a heat map tile provider, passing it the latlngs of the police stations.
-        HeatmapTileProvider provider = new HeatmapTileProvider.Builder()
+        provider = new HeatmapTileProvider.Builder()
                 .weightedData(weightedLatLng)
 
                 //.radius(50)
@@ -211,6 +226,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         PlotHeatMap("data_1.csv");
         PlotHeatMap("data_2.csv");
         PlotHeatMap("data_3.csv");
+        PlotHeatMap("new_data.csv");
         //googleMap.addMarker((new MarkerOptions().position((new LatLng(0,0))).title("Test")));
 
         addHeatMap(mMap);
@@ -251,7 +267,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onStop() {
         super.onStop();
-        mapView.onStop();
+       // mapView.onStop();
     }
 
     @Override
@@ -367,14 +383,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onConnected(@Nullable Bundle bundle) {
 
-        locationRequest = new LocationRequest();
-        locationRequest.setInterval(1100);
-        locationRequest.setFastestInterval(1100);
-        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-
-        if(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            LocationServices.FusedLocationApi.requestLocationUpdates(googleApiClient, locationRequest, (com.google.android.gms.location.LocationListener) this);
-        }
+//        locationRequest = new LocationRequest();
+//        locationRequest.setInterval(1100);
+//        locationRequest.setFastestInterval(1100);
+//        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+//
+//        if(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+//            LocationServices.FusedLocationApi.requestLocationUpdates(googleApiClient, locationRequest, (com.google.android.gms.location.LocationListener) this);
+//        }
     }
     private void updateCameraBearing(GoogleMap googleMap, float bearing) {
         if ( googleMap == null) return;
@@ -450,6 +466,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     mytext = "no pothole";
                 } else {
                     mytext = "pothole";
+                    writeToCSV(1);
                 }
                 pothole_type.setText(mytext);
         //}
@@ -565,6 +582,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 + ++pothole_counter + "," +
                 + pothole_type + "\n";;
 
+                weightedLatLng.add(new WeightedLatLng(new LatLng(latitude,longitude),1.0));
+
+                provider.setWeightedData(weightedLatLng);
         try {
             fos.write(littleTest.getBytes());
         } catch (IOException e) {
