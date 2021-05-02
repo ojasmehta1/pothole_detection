@@ -20,6 +20,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
@@ -74,11 +75,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     Sensor accelerometer;
     long starttime = 0;
     int interval = 5; //interval = 5 seconds
+    int pothole_counter = 0;
     TextView pothole_type, pothole_accuracy;
+    double latitude,longitude;
     private Interpreter tflite;
     double acc_X, acc_Y, acc_Z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, milli_;
     double accMax,accMin,accStd,accZcr,accMean,accVar,gyroMax,gyroMin,gyroStd,gyroZcr,gyroMean,gyroVar;
     private final Interpreter.Options options = new Interpreter.Options();
+    FileOutputStream fos = null;
     ////////////////////////////
     private MapView mapView;
     private GoogleMap mMap;
@@ -107,10 +111,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         try {
             File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/pothole_data", "new_data.csv");
-            FileOutputStream fos = new FileOutputStream(file);
             if(file.exists()) {
-                fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
+                //fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
                 }
+            else{
+                fos = new FileOutputStream(file);
+                fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
+            }
             } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -316,6 +323,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onLocationChanged(Location location) {
         lastLocation = location;
 
+        latitude = location.getLatitude();
+        longitude = location.getLongitude();
         if (currentUserLocationMarker != null)
         {
             currentUserLocationMarker.remove();
@@ -528,5 +537,34 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
         }
         return num / length;
+    }
+    public void writeToCSV(int pothole_type) {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            //requestPermission();
+            return;
+        }
+
+        String littleTest = acc_X + ","
+                + acc_Y + ","
+                + acc_Z + ","
+                + gyro_x + ","
+                + gyro_y + ","
+                + gyro_z + ","
+                + mag_x + ","
+                + mag_y + ","
+                + mag_z + ","
+                + milli_ + ","
+                + latitude + ","
+                + longitude + "," +
+                + ++pothole_counter + "," +
+                + pothole_type + "\n";;
+
+        try {
+            fos.write(littleTest.getBytes());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
