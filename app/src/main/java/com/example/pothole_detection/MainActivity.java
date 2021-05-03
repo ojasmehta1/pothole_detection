@@ -62,6 +62,7 @@ import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback,
@@ -97,7 +98,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private Location lastLocation;
     private Marker currentUserLocationMarker;
     // Storage Permissions
+
+    private double[] accdata = new double[50];
+    private int acccount = 0;
+    private double[] gyrodata = new double[50];
+    private int gyrocount = 0;
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
+    private int lastElapsedSec = -1;
     private static String[] PERMISSIONS_STORAGE = {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -133,6 +140,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             e.printStackTrace();
         }
 
+        weightedLatLng.add(new WeightedLatLng(new LatLng(42.63176,-71.361),1.0));
         RequestSensorData(this);
 
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
@@ -183,7 +191,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 //                Color.rgb(255, 128, 0),    // orange
 //                Color.rgb(255, 0, 0),   // red
 //                Color.rgb(0, 0, 255)
-                Color.rgb(102, 225, 0), // green
+                Color.rgb(255, 0, 0), // green
                 Color.rgb(255, 0, 0)    // red
         };
 
@@ -197,7 +205,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         provider = new HeatmapTileProvider.Builder()
                 .weightedData(weightedLatLng)
 
-                //.radius(50)
+                .radius(25)
                 .gradient(gradient)
                 .opacity(1.0)
                 .build();
@@ -413,25 +421,41 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     }
 
+    /*
+
+        if ((elapsedSec % timeInterval == 0 || count == 50) && elapsedSec != lastElapsedSec && count > 0){
+            double min = minimum(data);
+            double max = maximum(data);
+            double std = standardDeviation(data);
+            double zcr = zeroCrossingRate(data);
+            double mean = mean(data);
+            double var = variance(data);
+            double energy = energy(data);
+
+    * */
+
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
         long millis = System.currentTimeMillis() - starttime;
         int seconds = (int) (millis / 1000);
         int minutes = seconds / 60;
         seconds = seconds % 60;
-        if (seconds % interval == 2) {
+        double magnitude = -1;
             if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                 acc_X = sensorEvent.values[0];
                 acc_Y = sensorEvent.values[1];
                 acc_Z = sensorEvent.values[2];
 
-                double[] data_arr = {sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
-                accMax = maximum(data_arr) / 10;
+                magnitude = Math.sqrt(Math.pow(acc_X,2)+Math.pow(acc_Y,2)+Math.pow(acc_Z,2));
+
+
+                //data_arr.appe{sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
+                /*accMax = maximum(data_arr) / 10;
                 accMin = minimum(data_arr) / 10;
                 accStd = standardDeviation(data_arr);
                 accZcr = zeroCrossingRate(data_arr);
                 accMean = mean(data_arr) / 10;
-                accVar = variance(data_arr);
+                accVar = variance(data_arr);*/
             }
 
             if (sensorEvent.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
@@ -439,26 +463,49 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 gyro_y = sensorEvent.values[1];
                 gyro_z = sensorEvent.values[2];
 
-                double[] data_arr = {sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
+                magnitude = Math.sqrt(Math.pow(gyro_x,2)+Math.pow(gyro_y,2)+Math.pow(gyro_z,2));
+
+
+                /*double[] data_arr = {sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
                 gyroMax = maximum(data_arr);
                 gyroMin = minimum(data_arr);
                 gyroStd = standardDeviation(data_arr);
                 gyroZcr = zeroCrossingRate(data_arr);
                 gyroMean = mean(data_arr);
-                gyroVar = variance(data_arr);
+                gyroVar = variance(data_arr);*/
             }
 
+        if ((seconds % 1 == 0 || gyrocount == 50 || acccount == 50) && seconds != lastElapsedSec && gyrocount > 0 && acccount > 0) {
+            double accMin = minimum(accdata) / 10;
+            double accMax = maximum(accdata) / 10;
+            double accStd = standardDeviation(accdata);
+            double accZcr = zeroCrossingRate(accdata);
+            double accMean = mean(accdata) / 10;
+            double accVar = variance(accdata);
+
+            double gyroMin = minimum(gyrodata);
+            double gyroMax = maximum(gyrodata);
+            double gyroStd = standardDeviation(gyrodata);
+            double gyroZcr = zeroCrossingRate(gyrodata);
+            double gyroMean = mean(gyrodata);
+            double gyroVar = variance(gyrodata);
+
             float[] input = {(float) accMax, (float) accMin, (float) accStd, (float) accZcr, (float) accMean, (float) accVar, (float) gyroMax, (float) gyroMin, (float) gyroStd, (float) gyroZcr, (float) gyroMean, (float) gyroVar};
+            String littleTest = accMax + ","
+                    + accMin + ","
+                    + accStd + ","
+                    + accZcr + ","
+                    + accMean + ","
+                    + accVar + "\n";
+            System.out.println(littleTest);
             float[][] mResult = new float[1][1];
             try {
                 tflite.run(input, mResult);
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
 
             }
             int state = argmax(mResult[0]);
-            if(mResult[0] != null && state < mResult[0].length && state != -1) {
+            if (mResult[0] != null && state < mResult[0].length && state != -1) {
                 int classification_res = (int) mResult[0][state];
                 //Toast.makeText(getApplicationContext(),"RESULT: " + classification_res,Toast.LENGTH_SHORT).show();
 
@@ -473,7 +520,21 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
                 pothole_type.setText(mytext);
             }
+            lastElapsedSec = seconds;
+            Arrays.fill(accdata, 0.0);
+            Arrays.fill(gyrodata, 0.0);
+            gyrocount = 0;
+            acccount = 0;
         }
+        else if(sensorEvent.sensor.getType() == Sensor.TYPE_GYROSCOPE && gyrocount < 50){
+            gyrodata[gyrocount]=magnitude;
+            gyrocount++;
+        }
+        else if(sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER && acccount < 50){
+            accdata[acccount]=magnitude;
+            acccount++;
+        }
+        //}
     }
 
     @Override
@@ -588,7 +649,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
                 weightedLatLng.add(new WeightedLatLng(new LatLng(latitude,longitude),pothole_type));
                 //tileOverlay.remove();
-                provider.setWeightedData(weightedLatLng);
+                //provider.setWeightedData(weightedLatLng);
         try {
             fos.write(littleTest.getBytes());
         } catch (IOException e) {
