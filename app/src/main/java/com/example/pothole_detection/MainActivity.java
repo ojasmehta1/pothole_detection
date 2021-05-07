@@ -2,13 +2,11 @@ package com.example.pothole_detection;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RawRes;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import androidx.fragment.app.FragmentActivity;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -18,29 +16,19 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Environment;
-import android.view.View;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapView;
 import com.google.android.gms.maps.OnMapReadyCallback;
-import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.Marker;
-import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.TileOverlay;
 import com.google.android.gms.maps.model.TileOverlayOptions;
 import com.google.maps.android.heatmaps.Gradient;
@@ -48,9 +36,6 @@ import com.google.maps.android.heatmaps.HeatmapTileProvider;
 import com.google.maps.android.heatmaps.WeightedLatLng;
 import com.opencsv.CSVReader;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
 import org.tensorflow.lite.Interpreter;
 
 import java.io.File;
@@ -66,24 +51,18 @@ import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback,
-        GoogleApiClient.ConnectionCallbacks,
-        GoogleApiClient.OnConnectionFailedListener,
         LocationListener,
         SensorEventListener {
     ////////////////////////////
     private static final String MODEL_NAME = "updated_binaryclassifier.tflite";
     private SensorManager sensorManager;
     Sensor accelerometer;
-    long starttime = 0;
-    int interval = 5; //interval = 5 seconds
     int pothole_counter = 0;
-    TextView pothole_type, pothole_accuracy;
+    TextView pothole_type;
     double latitude, longitude;
     private Interpreter tflite;
     LocationManager locationManager;
-    ArrayList<WeightedLatLng> new_potholes = new ArrayList<>();
     double acc_X, acc_Y, acc_Z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, milli_;
-    double accMax, accMin, accStd, accZcr, accMean, accVar, gyroMax, gyroMin, gyroStd, gyroZcr, gyroMean, gyroVar;
     private final Interpreter.Options options = new Interpreter.Options();
     FileOutputStream fos = null;
     ////////////////////////////
@@ -93,38 +72,44 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     List<WeightedLatLng> weightedLatLng = new ArrayList<>();
     HeatmapTileProvider provider;
     TileOverlay tileOverlay;
-    private GoogleApiClient googleApiClient;
-    private LocationRequest locationRequest;
-    private Location lastLocation;
-    private Marker currentUserLocationMarker;
-    // Storage Permissions
-
     private double[] accdata = new double[50];
     private int acccount = 0;
     private double[] gyrodata = new double[50];
     private int gyrocount = 0;
-    private static final int REQUEST_EXTERNAL_STORAGE = 1;
     private int lastElapsedSec = -1;
+    //Permissions
+    private static final int REQUEST_STORAGE = 1;
+    private static final int REQUEST_LOCATION = 2;
     private static String[] PERMISSIONS_STORAGE = {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
     };
+    private static String[] PERMISSIONS_LOCATION = {
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+    };
 
+    @SuppressLint("MissingPermission")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        //Verify storage, and location permissions
+        verifyStoragePermissions(this);
         Bundle mapViewBundle = null;
         if (savedInstanceState != null) {
             mapViewBundle = savedInstanceState.getBundle(MAPVIEW_BUNDLE_KEY);
         }
 
+        //attach mapview, and pothole textview
+        pothole_type = findViewById(R.id.pothole_type);
+        mapView = (MapView) findViewById(R.id.map_view);
+
+        //Fetch the previous data collected by the app
         try {
             File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/pothole_data", "new_data.csv");
             if (file.exists()) {
                 fos = new FileOutputStream(file, true);
-                //fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
             } else {
                 fos = new FileOutputStream(file);
                 fos.write(("acc_X,acc_Y,acc_Z,gyro_X,gyro_Y,gyro_Z,mag_x, mag_y, mag_z,milli,latitude,longitude,counter,pothole type,label" + "\n").getBytes());
@@ -134,42 +119,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        //Load the tflite model
         try {
             tflite = new Interpreter(loadModelFile(this), options);
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        weightedLatLng.add(new WeightedLatLng(new LatLng(42.63176,-71.361),1.0));
+        //Request data from accelerometer, gyroscope
         RequestSensorData(this);
 
+        //Request location updates every 500 ms, 5 meters
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            return;
-        }
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,3000,10,this);
-
-        //pothole_accuracy = findViewById(R.id.pothole_accuracy);
-        pothole_type = findViewById(R.id.pothole_type);
-        verifyStoragePermissions(this);
-
-        mapView = (MapView) findViewById(R.id.map_view);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,500,5,this);
         mapView.onCreate(mapViewBundle);
         mapView.getMapAsync(this);
+
 
     }
 
     void RequestSensorData(Activity activity)
     {
         Sensor gyroscope;
-        Sensor magnetometer;
         sensorManager = (SensorManager)  getSystemService(Context.SENSOR_SERVICE);
 
         //Request accelerometer values
@@ -180,31 +151,30 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
         sensorManager.registerListener((SensorEventListener) activity, gyroscope, sensorManager.SENSOR_DELAY_NORMAL);
 
-        // Request magnetometer values
-        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
-        sensorManager.registerListener((SensorEventListener) activity, magnetometer, sensorManager.SENSOR_DELAY_NORMAL);
-
     }
     private void addHeatMap(GoogleMap map) {
+
+        //RGB values for pothole color
         int[] colors = {
 //                Color.rgb(128, 225, 0), // green
 //                Color.rgb(255, 128, 0),    // orange
 //                Color.rgb(255, 0, 0),   // red
 //                Color.rgb(0, 0, 255)
-                Color.rgb(255, 0, 0), // green
+                //Color.rgb(255, 0, 0), // green
                 Color.rgb(255, 0, 0)    // red
         };
 
+        //Starting point for those colors
         float[] startPoints = {
                // 1.0f, 2.0f, 3.0f , 3.9f
-                0.2f, 1f
+                0.2f
         };
 
+        //Attach it to a gradient
         Gradient gradient = new Gradient(colors, startPoints);
         // Create a heat map tile provider, passing it the latlngs of the police stations.
         provider = new HeatmapTileProvider.Builder()
                 .weightedData(weightedLatLng)
-
                 .radius(10)
                 .gradient(gradient)
                 .opacity(1.0)
@@ -213,24 +183,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         tileOverlay = map.addTileOverlay(new TileOverlayOptions().tileProvider(provider));
     }
 
+    @SuppressLint("MissingPermission")
     @Override
     public void onMapReady(GoogleMap googleMap) {
+        //Update global variable mMap
         mMap = googleMap;
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED
-                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            return;
-        }
         mMap.setMyLocationEnabled(true);
 
+        //Plot previously collected datapoints
         PlotHeatMap("data_0.csv");
         PlotHeatMap("data_1.csv");
         PlotHeatMap("data_2.csv");
@@ -291,13 +251,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapView.onLowMemory();
     }
 
-    void LogNewPotholes(double lat, double lng, double intensity)
-    {
-
-    }
     void PlotHeatMap(String filename)
     {
-        int pothole_counter = 1;
+        //Parse previously collected data from the csv file, and store it in a WeightedLatLng object that will be assigned to the heatmap
         try {
             File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/pothole_data", filename);
             CSVReader reader = new CSVReader(new FileReader(file));
@@ -310,7 +266,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 // nextLine[] is an array of values from the line
                 //System.out.println(nextLine[0] + nextLine[1] + "etc...");
                 if(Double.parseDouble(nextLine[13]) > 0)
-                //if(Double.parseDouble(nextLine[12]) == pothole_counter)
                 {
                     weightedLatLng.add(new WeightedLatLng(new LatLng(Double.parseDouble(nextLine[10]), Double.parseDouble(nextLine[11])), Double.parseDouble(nextLine[13])));
                     double x = Double.parseDouble(nextLine[13]);
@@ -331,46 +286,42 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
      * @param activity
      */
     public static void verifyStoragePermissions(Activity activity) {
-        // Check if we have write permission
-        int permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        // Check if we have storage permissions
+        int write_permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        int read_permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.READ_EXTERNAL_STORAGE);
+        // Check if we have location permissions
+        int coarse_location_permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_COARSE_LOCATION);
+        int fine_location_permission= ActivityCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_FINE_LOCATION);
 
-        if (permission != PackageManager.PERMISSION_GRANTED) {
+        if ((coarse_location_permission != PackageManager.PERMISSION_GRANTED) || (fine_location_permission != PackageManager.PERMISSION_GRANTED)){
+            // We don't have permission so prompt the user
+            ActivityCompat.requestPermissions(
+                    activity,
+                    PERMISSIONS_LOCATION,
+                    REQUEST_LOCATION
+            );
+        }
+        if ((write_permission != PackageManager.PERMISSION_GRANTED) || (read_permission != PackageManager.PERMISSION_GRANTED)){
             // We don't have permission so prompt the user
             ActivityCompat.requestPermissions(
                     activity,
                     PERMISSIONS_STORAGE,
-                    REQUEST_EXTERNAL_STORAGE
+                    REQUEST_STORAGE
             );
         }
+
     }
 
     @Override
     public void onLocationChanged(Location location) {
-        lastLocation = location;
-
+        //Update global variables
         latitude = location.getLatitude();
         longitude = location.getLongitude();
-        if (currentUserLocationMarker != null)
-        {
-            currentUserLocationMarker.remove();
-        }
 
         LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
-
-//        MarkerOptions markerOptions = new MarkerOptions();
-//        markerOptions.position(latLng);
-//        markerOptions.title("User Current Location");
-//        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
-
-//        currentUserLocationMarker = mMap.addMarker(markerOptions);
-
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
         mMap.animateCamera(CameraUpdateFactory.zoomBy(14));
-        if(googleApiClient != null)
-        {
-            LocationServices.FusedLocationApi.removeLocationUpdates(googleApiClient, (com.google.android.gms.location.LocationListener) this);
 
-        }
         updateCameraBearing(mMap, location.getBearing());
     }
 
@@ -389,18 +340,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     }
 
-    @Override
-    public void onConnected(@Nullable Bundle bundle) {
-
-//        locationRequest = new LocationRequest();
-//        locationRequest.setInterval(1100);
-//        locationRequest.setFastestInterval(1100);
-//        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-//
-//        if(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-//            LocationServices.FusedLocationApi.requestLocationUpdates(googleApiClient, locationRequest, (com.google.android.gms.location.LocationListener) this);
-//        }
-    }
     private void updateCameraBearing(GoogleMap googleMap, float bearing) {
         if ( googleMap == null) return;
         CameraPosition camPos = CameraPosition
@@ -411,68 +350,24 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .build();
         googleMap.animateCamera(CameraUpdateFactory.newCameraPosition(camPos));
     }
-    @Override
-    public void onConnectionSuspended(int i) {
-
-    }
-
-    @Override
-    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
-
-    }
-
-    /*
-
-        if ((elapsedSec % timeInterval == 0 || count == 50) && elapsedSec != lastElapsedSec && count > 0){
-            double min = minimum(data);
-            double max = maximum(data);
-            double std = standardDeviation(data);
-            double zcr = zeroCrossingRate(data);
-            double mean = mean(data);
-            double var = variance(data);
-            double energy = energy(data);
-
-    * */
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
-        long millis = System.currentTimeMillis() - starttime;
+        long millis = System.currentTimeMillis();
         int seconds = (int) (millis / 1000);
-        int minutes = seconds / 60;
         seconds = seconds % 60;
         double magnitude = -1;
             if (sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                 acc_X = sensorEvent.values[0];
                 acc_Y = sensorEvent.values[1];
                 acc_Z = sensorEvent.values[2];
-
                 magnitude = Math.sqrt(Math.pow(acc_X,2)+Math.pow(acc_Y,2)+Math.pow(acc_Z,2));
-
-
-                //data_arr.appe{sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
-                /*accMax = maximum(data_arr) / 10;
-                accMin = minimum(data_arr) / 10;
-                accStd = standardDeviation(data_arr);
-                accZcr = zeroCrossingRate(data_arr);
-                accMean = mean(data_arr) / 10;
-                accVar = variance(data_arr);*/
             }
-
             if (sensorEvent.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
                 gyro_x = sensorEvent.values[0];
                 gyro_y = sensorEvent.values[1];
                 gyro_z = sensorEvent.values[2];
-
                 magnitude = Math.sqrt(Math.pow(gyro_x,2)+Math.pow(gyro_y,2)+Math.pow(gyro_z,2));
-
-
-                /*double[] data_arr = {sensorEvent.values[0], sensorEvent.values[1], sensorEvent.values[2]};
-                gyroMax = maximum(data_arr);
-                gyroMin = minimum(data_arr);
-                gyroStd = standardDeviation(data_arr);
-                gyroZcr = zeroCrossingRate(data_arr);
-                gyroMean = mean(data_arr);
-                gyroVar = variance(data_arr);*/
             }
 
         if ((seconds % 1 == 0 || gyrocount == 50 || acccount == 50) && seconds != lastElapsedSec && gyrocount > 0 && acccount > 0) {
@@ -515,7 +410,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     mytext = "no pothole";
                 } else {
                     mytext = "pothole";
-                    pothole_type.setText(mytext);
                     writeToCSV(1);
                 }
                 pothole_type.setText(mytext);
@@ -534,7 +428,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             accdata[acccount]=magnitude;
             acccount++;
         }
-        //}
     }
 
     @Override
@@ -625,13 +518,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         return num / length;
     }
     public void writeToCSV(int pothole_type) {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            //requestPermission();
-            return;
-        }
-
         String littleTest = acc_X + ","
                 + acc_Y + ","
                 + acc_Z + ","
