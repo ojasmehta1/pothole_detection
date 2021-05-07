@@ -205,7 +205,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         provider = new HeatmapTileProvider.Builder()
                 .weightedData(weightedLatLng)
 
-                .radius(25)
+                .radius(10)
                 .gradient(gradient)
                 .opacity(1.0)
                 .build();
@@ -231,10 +231,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
         mMap.setMyLocationEnabled(true);
 
-//        PlotHeatMap("data_0.csv");
-//        PlotHeatMap("data_1.csv");
-//        PlotHeatMap("data_2.csv");
-//        PlotHeatMap("data_3.csv");
+        PlotHeatMap("data_0.csv");
+        PlotHeatMap("data_1.csv");
+        PlotHeatMap("data_2.csv");
+        PlotHeatMap("data_3.csv");
         PlotHeatMap("new_data.csv");
         //googleMap.addMarker((new MarkerOptions().position((new LatLng(0,0))).title("Test")));
 
