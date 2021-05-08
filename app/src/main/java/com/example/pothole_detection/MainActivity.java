@@ -535,7 +535,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
                 weightedLatLng.add(new WeightedLatLng(new LatLng(latitude,longitude),pothole_type));
                 //tileOverlay.remove();
-                //provider.setWeightedData(weightedLatLng);
+                provider.setWeightedData(weightedLatLng);
         try {
             fos.write(littleTest.getBytes());
         } catch (IOException e) {
